@@ -1,0 +1,30 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import Mystery from '../models/Mystery.js';
+import Evidence from '../models/Evidence.js';
+import Solution from '../models/Solution.js';
+import Result from '../models/Result.js';
+import Note from '../models/Note.js';
+import { requireAuth } from '../middleware/auth.js';
+import { generateMystery } from '../services/generateMystery.js';
+const router = Router();
+router.use(requireAuth);
+const idParam = z.string().regex(/^[a-f\d]{24}$/i);
+const publicCase = (m) => ({ id: m.id, title: m.title, scenario: m.scenario, category: m.category, difficulty: m.difficulty, status: m.status, location: m.location, incidentDate: m.incidentDate, incidentTime: m.incidentTime, background: m.background, suspects: m.suspects, timeline: m.timeline, createdAt: m.createdAt });
+
+router.post('/generate', async (req, res, next) => { try {
+  const input = z.object({ title: z.string().max(120).optional().default(''), scenario: z.string().min(30).max(4000), category: z.enum(['Murder Mystery','Theft','Disappearance','Betrayal','Cybercrime','Blackmail','Missing Person','Corporate Mystery','General Mystery']), difficulty: z.enum(['Easy','Medium','Hard']), suspectCount: z.coerce.number().int().min(3).max(6), setting: z.string().max(200).optional().default(''), instructions: z.string().max(1000).optional().default('') }).parse(req.body);
+  const generated = await generateMystery(input);
+  const mystery = await Mystery.create({ userId: req.userId, title: input.title || generated.title, scenario: input.scenario, category: input.category, difficulty: input.difficulty, location: generated.location, incidentDate: generated.incidentDate, incidentTime: generated.incidentTime, background: generated.background, suspects: generated.suspects, timeline: generated.timeline });
+  try { await Promise.all([Evidence.insertMany(generated.evidence.map((item) => ({ ...item, mysteryId: mystery._id }))), Solution.create({ ...generated.solution, mysteryId: mystery._id })]); }
+  catch (error) { await Promise.all([Mystery.deleteOne({ _id: mystery._id }), Evidence.deleteMany({ mysteryId: mystery._id }), Solution.deleteOne({ mysteryId: mystery._id })]); throw error; }
+  res.status(201).json({ mystery: publicCase(mystery) });
+} catch (e) { next(e); } });
+
+router.get('/', async (req, res, next) => { try { const mysteries = await Mystery.find({ userId: req.userId }).sort({ createdAt: -1 }); const results = await Result.find({ userId: req.userId }); const byId = new Map(results.map((r) => [String(r.mysteryId), r])); res.json({ mysteries: mysteries.map((m) => ({ ...publicCase(m), result: byId.get(String(m._id)) || null })) }); } catch (e) { next(e); } });
+router.get('/:id', async (req, res, next) => { try { const id = idParam.parse(req.params.id); const mystery = await Mystery.findOne({ _id: id, userId: req.userId }); if (!mystery) return res.status(404).json({ message: 'Investigation not found.' }); const [evidence, note, result] = await Promise.all([Evidence.find({ mysteryId: id }).sort({ timestamp: 1 }), Note.findOne({ userId: req.userId, mysteryId: id }), Result.findOne({ userId: req.userId, mysteryId: id })]); let solution = null; if (result) solution = await Solution.findOne({ mysteryId: id }).select('-_id -mysteryId -__v'); res.json({ mystery: publicCase(mystery), evidence, note: note?.notes || '', result, solution }); } catch (e) { next(e); } });
+router.delete('/:id', async (req, res, next) => { try { const id = idParam.parse(req.params.id); const mystery = await Mystery.findOneAndDelete({ _id: id, userId: req.userId }); if (!mystery) return res.status(404).json({ message: 'Investigation not found.' }); await Promise.all([Evidence.deleteMany({ mysteryId: id }), Solution.deleteOne({ mysteryId: id }), Note.deleteOne({ mysteryId: id, userId: req.userId }), Result.deleteOne({ mysteryId: id, userId: req.userId })]); res.json({ message: 'Investigation deleted.' }); } catch (e) { next(e); } });
+router.get('/:id/evidence', async (req, res, next) => { try { const id = idParam.parse(req.params.id); const owned = await Mystery.exists({ _id: id, userId: req.userId }); if (!owned) return res.status(404).json({ message: 'Investigation not found.' }); res.json({ evidence: await Evidence.find({ mysteryId: id }).sort({ timestamp: 1 }) }); } catch (e) { next(e); } });
+router.post('/:id/notes', async (req, res, next) => { try { const id = idParam.parse(req.params.id); const { notes } = z.object({ notes: z.string().max(12000) }).parse(req.body); if (!await Mystery.exists({ _id: id, userId: req.userId })) return res.status(404).json({ message: 'Investigation not found.' }); const note = await Note.findOneAndUpdate({ userId: req.userId, mysteryId: id }, { notes }, { upsert: true, new: true, runValidators: true }); res.json({ note: note.notes, updatedAt: note.updatedAt }); } catch (e) { next(e); } });
+router.post('/:id/accuse', async (req, res, next) => { try { const id = idParam.parse(req.params.id); const { suspectId } = z.object({ suspectId: z.string().min(1) }).parse(req.body); const mystery = await Mystery.findOne({ _id: id, userId: req.userId }); if (!mystery) return res.status(404).json({ message: 'Investigation not found.' }); if (mystery.status === 'completed') return res.status(409).json({ message: 'This investigation has already been completed.' }); if (!mystery.suspects.some((s) => s.id === suspectId)) return res.status(400).json({ message: 'Choose a suspect from this investigation.' }); const solution = await Solution.findOne({ mysteryId: id }); if (!solution) return res.status(500).json({ message: 'Case solution is unavailable.' }); const result = await Result.create({ userId: req.userId, mysteryId: id, selectedSuspectId: suspectId, isCorrect: suspectId === solution.culpritId, status: 'completed' }); mystery.status = 'completed'; await mystery.save(); res.json({ result, solution: { culpritId: solution.culpritId, motive: solution.motive, method: solution.method, opportunity: solution.opportunity, timeline: solution.timeline, reasoning: solution.reasoning, importantClues: solution.importantClues } }); } catch (e) { next(e); } });
+export default router;

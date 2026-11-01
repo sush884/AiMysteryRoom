@@ -1,0 +1,8 @@
+import { Router } from 'express';
+import { requireAuth } from '../middleware/auth.js';
+import Mystery from '../models/Mystery.js';
+import Result from '../models/Result.js';
+const router = Router(); router.use(requireAuth);
+router.get('/', async (req, res, next) => { try { const [total, open, solved, results, recent] = await Promise.all([Mystery.countDocuments({ userId: req.userId }), Mystery.countDocuments({ userId: req.userId, status: 'active' }), Result.countDocuments({ userId: req.userId, isCorrect: true }), Result.find({ userId: req.userId }).select('mysteryId selectedSuspectId isCorrect submittedAt'), Mystery.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(5) ]); res.json({ stats: { total, solved, unsolved: open, successRate: results.length ? Math.round(solved / results.length * 100) : 0 }, recent: recent.map((m) => { const r = results.find((x) => String(x.mysteryId) === String(m._id)); return { id: m.id, title: m.title, category: m.category, difficulty: m.difficulty, status: m.status, createdAt: m.createdAt, result: r ? { isCorrect: r.isCorrect, submittedAt: r.submittedAt } : null }; }) }); } catch (e) { next(e); } });
+router.get('/history', async (req, res, next) => { try { const mysteries = await Mystery.find({ userId: req.userId }).sort({ createdAt: -1 }); const results = await Result.find({ userId: req.userId }); res.json({ history: mysteries.map((m) => ({ id: m.id, title: m.title, difficulty: m.difficulty, category: m.category, status: m.status, createdAt: m.createdAt, result: results.find((r) => String(r.mysteryId) === String(m._id)) || null })) }); } catch (e) { next(e); } });
+export default router;

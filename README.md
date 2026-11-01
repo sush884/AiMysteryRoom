@@ -11,4 +11,13 @@ An interactive mystery investigation platform built with React, Express, MongoDB
 
 The frontend runs on port 5173 and the API on port 5000. Gemini generation requires a valid `GEMINI_API_KEY`. Generated cases and solutions are persisted separately; the solution is only returned after an accusation.
 
+## Deploying to Vercel
+
+Create two Vercel projects from this repository:
+
+- **Frontend:** set the Root Directory to `frontend`. The Vite build outputs to `dist`; `frontend/vercel.json` enables client-side routes. Set `VITE_API_URL` to `https://ai-mystery-room-jet.vercel.app/api/v1` if you use a different backend URL.
+- **Backend:** set the Root Directory to `backend`. Add `MONGO_URI`, `JWT_SECRET`, and `GEMINI_API_KEY` as Vercel environment variables. Set `CLIENT_URL` to `https://ai-mystery-room-5hoj.vercel.app` (comma-separated origins are supported). The serverless handler is in `backend/api/[...path].js`.
+
+Redeploy both projects after changing their settings or environment variables. Do not add secrets to the repository.
+
 See [spec.md](spec.md) for the product source of truth and [DEVELOPMENT.md](DEVELOPMENT.md) for implementation status and next steps.

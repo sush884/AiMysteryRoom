@@ -9,7 +9,11 @@ import dashboardRoutes from './routes/dashboard.js';
 import { errorHandler } from './middleware/errors.js';
 
 const app = express();
-const allowedOrigins = new Set((process.env.CLIENT_URL || 'http://localhost:5173,https://ai-mystery-room-5hoj.vercel.app').split(',').map((origin) => origin.trim()).filter(Boolean));
+const allowedOrigins = new Set([
+  'http://localhost:5173',
+  'https://ai-mystery-room-5j8e.vercel.app',
+  ...(process.env.CLIENT_URL || '').split(',').map((origin) => origin.trim()).filter(Boolean),
+]);
 app.use(helmet());
 app.use(cors({ origin(origin, callback) {
   if (!origin || allowedOrigins.has(origin)) return callback(null, true);

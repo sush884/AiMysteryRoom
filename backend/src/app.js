@@ -14,6 +14,13 @@ const allowedOrigins = new Set([
   'https://ai-mystery-room-5j8e.vercel.app',
   ...(process.env.CLIENT_URL || '').split(',').map((origin) => origin.trim()).filter(Boolean),
 ]);
+export function setCorsHeaders(req, res) {
+  const origin = req.headers.origin;
+  if (!origin || !allowedOrigins.has(origin)) return;
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Vary', 'Origin');
+}
 app.use(helmet());
 app.use(cors({ origin(origin, callback) {
   if (!origin || allowedOrigins.has(origin)) return callback(null, true);
